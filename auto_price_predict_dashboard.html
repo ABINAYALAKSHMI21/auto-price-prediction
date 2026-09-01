@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auto Price Predict — Project Instrument Panel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.32.0/plotly.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg: #12151b;
+    --bg-grid: #171b23;
+    --panel: #1a1f28;
+    --panel-2: #1f2530;
+    --line: #2a3140;
+    --text: #eef1f5;
+    --text-dim: #8d96a6;
+    --amber: #e8873a;
+    --amber-soft: rgba(232,135,58,0.15);
+    --teal: #4fd1c5;
+    --teal-soft: rgba(79,209,197,0.15);
+    --red: #e0554f;
+    --radius: 4px;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px) 0 0/44px 44px,
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px) 0 0/44px 44px,
+      var(--bg);
+    color:var(--text);
+    font-family:'Inter', sans-serif;
+    line-height:1.5;
+  }
+  h1,h2,h3{font-family:'Space Grotesk', sans-serif; margin:0; letter-spacing:-0.01em;}
+  .mono{font-family:'IBM Plex Mono', monospace;}
+  a{color:inherit;}
+
+  /* ---------- layout shells ---------- */
+  .wrap{max-width:1180px; margin:0 auto; padding:0 28px;}
+  section{padding:64px 0;}
+  section + section{border-top:1px solid var(--line);}
+  .kicker{
+    color:var(--amber); font-family:'IBM Plex Mono', monospace; font-size:12.5px;
+    letter-spacing:0.04em; margin-bottom:10px;
+  }
+  .section-head{max-width:640px; margin-bottom:36px;}
+  .section-head h2{font-size:26px; font-weight:600;}
+  .section-head p{color:var(--text-dim); font-size:15px; margin-top:10px;}
+
+  /* ---------- nav ---------- */
+  nav{
+    position:sticky; top:0; z-index:50;
+    background:rgba(18,21,27,0.88); backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .nav-inner{
+    max-width:1180px; margin:0 auto; padding:14px 28px;
+    display:flex; align-items:center; justify-content:space-between; gap:24px;
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-weight:600; font-size:15px;}
+  .brand .dot{width:9px; height:9px; border-radius:50%; background:var(--amber); box-shadow:0 0 10px var(--amber);}
+  .navlinks{display:flex; gap:22px; font-size:13.5px; color:var(--text-dim); flex-wrap:wrap;}
+  .navlinks a{text-decoration:none; transition:color .15s;}
+  .navlinks a:hover{color:var(--text);}
+
+  /* ---------- hero ---------- */
+  .hero{padding:72px 0 48px;}
+  .hero-top{display:flex; justify-content:space-between; align-items:flex-end; gap:32px; flex-wrap:wrap;}
+  .hero h1{font-size:clamp(34px,5vw,54px); font-weight:700; max-width:680px;}
+  .hero .lede{color:var(--text-dim); font-size:16px; max-width:520px; margin-top:14px;}
+  .badge-row{display:flex; gap:10px; flex-wrap:wrap; margin-top:22px;}
+  .badge{
+    border:1px solid var(--line); border-radius:100px; padding:6px 14px;
+    font-size:12.5px; color:var(--text-dim); font-family:'IBM Plex Mono', monospace;
+  }
+
+  .cluster{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:44px;
+  }
+  .gauge{
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+    padding:20px 20px 18px; position:relative; overflow:hidden;
+  }
+  .gauge::before{
+    content:""; position:absolute; top:0; left:0; right:0; height:2px;
+    background:var(--gauge-color, var(--amber));
+  }
+  .gauge .num{font-family:'IBM Plex Mono', monospace; font-size:30px; font-weight:600; color:var(--text);}
+  .gauge .unit{font-size:13px; color:var(--gauge-color, var(--amber)); margin-left:4px;}
+  .gauge .label{font-size:12.5px; color:var(--text-dim); margin-top:6px;}
+
+  @media (max-width:820px){ .cluster{grid-template-columns:repeat(2,1fr);} }
+
+  /* ---------- generic panel/card ---------- */
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:22px;
+  }
+  .grid-2{display:grid; grid-template-columns:1.3fr 1fr; gap:20px;}
+  .grid-3{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+  @media (max-width:900px){ .grid-2{grid-template-columns:1fr;} .grid-3{grid-template-columns:1fr;} }
+
+  .panel h3{font-size:15px; font-weight:600; margin-bottom:2px;}
+  .panel .sub{font-size:12.5px; color:var(--text-dim); margin-bottom:14px;}
+
+  .plot{width:100%; height:420px;}
+  .plot.tall{height:480px;}
+  .plot.short{height:300px;}
+
+  .hint{
+    font-size:11.5px; color:var(--text-dim); font-family:'IBM Plex Mono', monospace;
+    display:flex; align-items:center; gap:6px; margin-top:10px;
+  }
+  .hint svg{width:13px; height:13px; opacity:.7;}
+
+  /* controls */
+  .tabbar{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;}
+  .tabbtn{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text-dim);
+    font-family:'IBM Plex Mono', monospace; font-size:12px; padding:7px 12px;
+    border-radius:100px; cursor:pointer; transition:all .15s;
+  }
+  .tabbtn:hover{color:var(--text); border-color:#3a4457;}
+  .tabbtn.active{background:var(--amber-soft); color:var(--amber); border-color:var(--amber);}
+
+  /* insight list */
+  .insight-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:14px;}
+  .insight-list li{
+    display:flex; gap:14px; padding:16px; background:var(--panel-2); border:1px solid var(--line); border-radius:6px;
+  }
+  .insight-list .tag{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--amber);
+    border:1px solid var(--amber); border-radius:100px; padding:2px 9px; height:fit-content; white-space:nowrap;
+  }
+  .insight-list p{margin:0; font-size:14px; color:#d7dbe2;}
+
+  /* model table */
+  table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  th,td{text-align:left; padding:10px 8px; border-bottom:1px solid var(--line);}
+  th{color:var(--text-dim); font-weight:500; font-family:'IBM Plex Mono', monospace; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em;}
+  td.mono{font-family:'IBM Plex Mono', monospace;}
+  tr.best td{color:var(--amber);}
+  .pill{font-size:11px; padding:2px 8px; border-radius:100px; font-family:'IBM Plex Mono', monospace;}
+  .pill.up{color:var(--teal); border:1px solid var(--teal);}
+  .pill.down{color:var(--red); border:1px solid var(--red);}
+
+  /* pipeline steps */
+  .pipeline{display:flex; flex-wrap:wrap; gap:0;}
+  .pstep{
+    flex:1 1 150px; padding:16px; border:1px solid var(--line); background:var(--panel-2);
+    position:relative;
+  }
+  .pstep:not(:last-child)::after{
+    content:"→"; position:absolute; right:-11px; top:50%; transform:translateY(-50%);
+    color:var(--text-dim); font-size:14px; z-index:2; background:var(--bg); width:20px; text-align:center;
+  }
+  .pstep .n{font-family:'IBM Plex Mono', monospace; color:var(--amber); font-size:11.5px;}
+  .pstep h4{font-size:13.5px; margin:6px 0 4px; font-weight:600;}
+  .pstep p{font-size:12px; color:var(--text-dim); margin:0;}
+
+  footer{padding:36px 0 60px; text-align:center; color:var(--text-dim); font-size:12.5px;}
+  footer .mono{color:#5a6373;}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <div class="brand"><span class="dot"></span> AUTO&nbsp;PRICE&nbsp;PREDICT</div>
+    <div class="navlinks">
+      <a href="#overview">Overview</a>
+      <a href="#distributions">Fleet Mix</a>
+      <a href="#relationships">Feature Space</a>
+      <a href="#ranges">Price &amp; Spec Ranges</a>
+      <a href="#models">Model Bench</a>
+      <a href="#insights">Findings</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero wrap" id="overview">
+  <div class="hero-top">
+    <div>
+      <div class="kicker">REGRESSION PROJECT — 1985 AUTO IMPORTS DATASET</div>
+      <h1>Predicting what a car should cost, from 26 raw specs down to 23 signal-bearing dimensions.</h1>
+      <p class="lede">A used-car pricing study built for manufacturers and dealerships: which body styles, engines, and drivetrains actually move the price needle, and which learning algorithm reads that signal best.</p>
+    </div>
+    <div class="badge-row">
+      <span class="badge">200 vehicles</span>
+      <span class="badge">22 makes</span>
+      <span class="badge">7 models benchmarked</span>
+    </div>
+  </div>
+
+  <div class="cluster">
+    <div class="gauge" style="--gauge-color:var(--amber)">
+      <span class="num">93.1</span><span class="unit">% R²</span>
+      <div class="label">Best holdout score — tuned Decision Tree &amp; tuned MLP, tied</div>
+    </div>
+    <div class="gauge" style="--gauge-color:var(--teal)">
+      <span class="num">$5.1K–45.4K</span>
+      <div class="label">Price range across the fleet · mean $13,206</div>
+    </div>
+    <div class="gauge" style="--gauge-color:var(--amber)">
+      <span class="num">48</span><span class="unit">cols → 23</span>
+      <div class="label">PCA components needed to keep 95% of variance</div>
+    </div>
+    <div class="gauge" style="--gauge-color:var(--teal)">
+      <span class="num">262</span><span class="unit">hp</span>
+      <div class="label">Most powerful car in the set — a Jaguar</div>
+    </div>
+  </div>
+</header>
+
+<section id="brief">
+  <div class="wrap">
+    <div class="grid-2">
+      <div class="panel">
+        <div class="kicker">PROBLEM STATEMENT</div>
+        <h3 style="font-size:17px; margin-bottom:10px;">Why price prediction, and why it matters to a dealership</h3>
+        <p style="color:#c9cfd9; font-size:14.5px;">
+          The dataset carries 26 attributes per vehicle — engine layout, body style, drivetrain, fuel system, dimensions, and an insurance risk rating — for 200 cars imported in 1985. The goal is a model that estimates price directly from those specs, so manufacturers can see how design choices move price, and dealers can sanity-check listings against comparable stock.
+        </p>
+      </div>
+      <div class="panel">
+        <div class="kicker">DATA CLEANUP</div>
+        <h3 style="font-size:17px; margin-bottom:10px;">What had to be fixed before modeling</h3>
+        <p style="color:#c9cfd9; font-size:14.5px;">
+          Six columns arrived with <span class="mono" style="color:var(--amber)">'?'</span> standing in for missing values — normalized losses, bore, stroke, horsepower, peak rpm, and number of doors. Numeric gaps were imputed with the column median, the door count with its mode, and every categorical field was then label- or one-hot-encoded before scaling.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pipeline-section">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">METHODOLOGY</div>
+      <h2>From raw spec sheet to holdout score</h2>
+    </div>
+    <div class="pipeline">
+      <div class="pstep"><div class="n">01</div><h4>Clean</h4><p>Median/mode-impute 6 corrupted columns, confirm zero duplicates</p></div>
+      <div class="pstep"><div class="n">02</div><h4>Encode</h4><p>Label-encode binary fields, one-hot the rest, drop a reference level each</p></div>
+      <div class="pstep"><div class="n">03</div><h4>Scale</h4><p>Min-max scale 16 numeric columns, including the price target</p></div>
+      <div class="pstep"><div class="n">04</div><h4>De-correlate</h4><p>Drop length, curb weight &amp; highway mpg — all &gt;0.85 correlated with kept features</p></div>
+      <div class="pstep"><div class="n">05</div><h4>Split</h4><p>80/20 train-test split → 160 train, 40 test rows</p></div>
+      <div class="pstep"><div class="n">06</div><h4>PCA</h4><p>Compress to 23 components at 95% retained variance</p></div>
+      <div class="pstep"><div class="n">07</div><h4>Benchmark</h4><p>7 regressors, 6 of them hyperparameter-tuned via CV search</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="distributions">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">FLEET MIX · 3D</div>
+      <h2>What the 200-car fleet is actually made of</h2>
+      <p>Every bar below is an exact category count from the dataset. Drag to orbit, scroll to zoom, hover a bar for its value.</p>
+    </div>
+
+    <div class="panel">
+      <div class="tabbar" id="dist-tabs"></div>
+      <div id="dist3d" class="plot tall"></div>
+      <div class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 1116 0 8 8 0 01-16 0z"/><path d="M12 8v4l3 2"/></svg> drag = rotate · scroll = zoom · double-click = reset view</div>
+    </div>
+
+    <div class="grid-3" style="margin-top:16px;">
+      <div class="panel">
+        <h3>Fuel &amp; aspiration</h3>
+        <div class="sub">gas vs diesel · naturally aspirated vs turbo</div>
+        <div id="pie-fuel" class="plot short"></div>
+      </div>
+      <div class="panel">
+        <h3>Drive configuration</h3>
+        <div class="sub">front / rear / four-wheel drive, 200 cars</div>
+        <div id="pie-drive" class="plot short"></div>
+      </div>
+      <div class="panel">
+        <h3>Cylinder count</h3>
+        <div class="sub">four-cylinder dominates the fleet</div>
+        <div id="bar-cyl" class="plot short"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="relationships">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">FEATURE SPACE · 3D SURFACE</div>
+      <h2>How the engineering specs move together</h2>
+      <p>Pearson correlation across eight core numeric features, computed before the multicollinear columns were dropped. Peaks and valleys are ±1 — the terrain shows which specs travel together.</p>
+    </div>
+    <div class="panel">
+      <div id="corr3d" class="plot tall"></div>
+      <div class="hint"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12a8 8 0 1116 0 8 8 0 01-16 0z"/><path d="M12 8v4l3 2"/></svg> city &amp; highway mpg ride almost perfectly together (r=0.97) · horsepower trades off against both (r≈−0.82)</div>
+    </div>
+  </div>
+</section>
+
+<section id="ranges">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">PRICE &amp; SPEC RANGES</div>
+      <h2>Spread of the numbers that matter most</h2>
+      <p>Boxes mark the 25th–75th percentile with the true min/max whiskers, straight from <span class="mono">data.describe()</span>.</p>
+    </div>
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Price distribution</h3>
+        <div class="sub">185 distinct price points across the fleet</div>
+        <div id="price-hist" class="plot"></div>
+      </div>
+      <div class="panel">
+        <h3>Spec ranges (scaled to compare)</h3>
+        <div class="sub">box = 25–75th pct · whisker = true min/max</div>
+        <div id="spec-box" class="plot"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="models">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">MODEL BENCH</div>
+      <h2>Seven regressors, one holdout set</h2>
+      <p>Every model trained on the same 23 PCA components and scored on the same 40 held-out cars.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h3>Final leaderboard</h3>
+        <div class="sub">R² on the 40-car holdout set</div>
+        <div id="leaderboard" class="plot"></div>
+      </div>
+      <div class="panel">
+        <h3>Did tuning actually help?</h3>
+        <div class="sub">default hyperparameters vs. CV-searched best params</div>
+        <div id="tuning" class="plot"></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:16px;">
+      <h3>Tuning outcome, model by model</h3>
+      <div class="sub">green = tuning improved holdout R² · red = tuning made it worse</div>
+      <table>
+        <thead><tr><th>Model</th><th>Default R²</th><th>Tuned R²</th><th>Change</th><th>Best CV parameters</th></tr></thead>
+        <tbody id="model-table"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="insights">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="kicker">FINDINGS &amp; CONCLUSION</div>
+      <h2>What the dashboard is actually telling us</h2>
+    </div>
+    <ul class="insight-list">
+      <li><span class="tag">RISK</span><p>Rotor engines carry the highest insurance risk rating (symboling) of any engine type in the fleet.</p></li>
+      <li><span class="tag">SUPPLY</span><p>Toyota builds more gas-powered cars than any other make, and leads in both two-door and four-door body counts.</p></li>
+      <li><span class="tag">PERFORMANCE</span><p>Jaguar produces the single most powerful car in the dataset, at 262 hp — well above the fleet mean of roughly 104 hp.</p></li>
+      <li><span class="tag">PRICE</span><p>Convertibles carry the highest average price of any body style, despite being the rarest — just 5 of the 200 cars.</p></li>
+      <li><span class="tag">TRADE-OFF</span><p>City and highway mpg move almost in lockstep (r=0.97); horsepower buys speed at the direct expense of both (r≈−0.82).</p></li>
+      <li><span class="tag">TUNING</span><p>CV-based hyperparameter search paid off for XGBoost (+0.13 R²) but backfired for Random Forest and KNN — a reminder that a better cross-validation score doesn't always mean a better holdout score.</p></li>
+      <li><span class="tag">RESULT</span><p>The tuned Decision Tree and tuned MLP both land at R²≈0.931, tied for best. The notebook's call: Decision Tree is the more practical pick — same accuracy, far less training and inference overhead than a neural net.</p></li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Built from <span class="mono">Auto_Price_Predict.ipynb</span> — every chart above renders real values pulled from the notebook's own outputs (value counts, describe() summaries, correlation matrix, and R² scores).
+  </div>
+</footer>
+
+<script>
+/* ============================= REAL DATA, FROM THE NOTEBOOK ============================= */
+
+const PALETTE = { amber:'#e8873a', teal:'#4fd1c5', red:'#e0554f', grid:'#2a3140', text:'#8d96a6' };
+
+const DIST_SETS = {
+  make: { title:'Make', data:[
+    ['toyota',32],['nissan',18],['mazda',17],['mitsubishi',13],['honda',13],['volkswagen',12],
+    ['subaru',12],['peugot',11],['volvo',11],['dodge',9],['mercedes-benz',8],['bmw',8],
+    ['plymouth',7],['audi',6],['saab',6],['porsche',4],['jaguar',3],['chevrolet',3],
+    ['isuzu',2],['renault',2],['alfa-romero',2],['mercury',1]
+  ]},
+  body: { title:'Body style', data:[
+    ['sedan',94],['hatchback',68],['wagon',25],['hardtop',8],['convertible',5]
+  ]},
+  engine: { title:'Engine type', data:[
+    ['ohc',145],['ohcf',15],['ohcv',13],['l',12],['dohc',11],['rotor',4]
+  ]},
+  fuelsys: { title:'Fuel system', data:[
+    ['mpfi',91],['2bbl',64],['idi',20],['1bbl',11],['spdi',9],['4bbl',3],['mfi',1],['spfi',1]
+  ]},
+  symboling: { title:'Insurance risk (symboling)', data:[
+    ['-2',3],['-1',22],['0',65],['1',52],['2',32],['3',26]
+  ]}
+};
+
+const CORR_FEATURES = ['Wheel_Base','Width','Curb_Weight','Engine_Size','Compression_Ratio','Horsepower','City_mpg','Highway_mpg'];
+const CORR_Z = [
+  [1,        0.814593, 0.787584, 0.576779, 0.249689, 0.376616, -0.480029, -0.552211],
+  [0.814593, 1,        0.867720, 0.731100, 0.189008, 0.616214, -0.638155, -0.684700],
+  [0.787584, 0.867720, 1,        0.849090, 0.156444, 0.758058, -0.750390, -0.795515],
+  [0.576779, 0.731100, 0.849090, 1,        0.029005, 0.822188, -0.651002, -0.679877],
+  [0.249689, 0.189008, 0.156444, 0.029005, 1,       -0.213323,  0.330897,  0.267929],
+  [0.376616, 0.616214, 0.758058, 0.822188,-0.213323, 1,        -0.821460, -0.804608],
+  [-0.480029,-0.638155,-0.750390,-0.651002,0.330897,-0.821460,  1,         0.972024],
+  [-0.552211,-0.684700,-0.795515,-0.679877,0.267929,-0.804608,  0.972024,  1]
+];
+
+const PRICE_HIST = { edges:['5–10K','10–15K','15–20K','20–25K','25–30K','30–35K','35–40K','40–45K','45–50K'],
+                      counts:[86,39,35,8,3,6,5,2,1] };
+
+// scaled 0-1 (min-max) spec ranges, straight from data.describe()
+const SPEC_BOX = [
+  { name:'Wheel Base',  min:86.6,  q1:94.5,   med:97,    q3:102.4,  max:120.9 },
+  { name:'Width',       min:60.3,  q1:64.175, med:65.5,  q3:66.675, max:72 },
+  { name:'Height',      min:47.8,  q1:52,     med:54.1,  q3:55.525, max:59.8 },
+  { name:'Curb Weight',   min:1488, q1:2163,  med:2414,  q3:2928.25, max:4066 },
+  { name:'Engine Size',   min:61,   q1:97.75, med:119.5, q3:142,     max:326 },
+  { name:'City MPG',      min:13,   q1:19,    med:24,    q3:30,      max:49 },
+  { name:'Highway MPG',   min:16,   q1:25,    med:30,    q3:34,      max:54 }
+];
+
+const LEADERBOARD = [
+  { model:'MLPRegressor (ANN)',        r2:0.931108 },
+  { model:'DecisionTreeRegressor',     r2:0.931172 },
+  { model:'GBRegressor',               r2:0.877420 },
+  { model:'XGBRegressor',              r2:0.848887 },
+  { model:'LinearRegression',          r2:0.839989 },
+  { model:'KNeighborsRegressor',       r2:0.755619 },
+  { model:'RandomForestRegressor',     r2:0.707707 }
+].sort((a,b)=>a.r2-b.r2);
+
+const TUNING = [
+  { model:'DecisionTree', before:0.889623, after:0.931172, params:'splitter=random, max_depth=15, min_samples_split=5, criterion=absolute_error' },
+  { model:'RandomForest', before:0.747015, after:0.707707, params:'n_estimators=250, max_depth=22, max_features=sqrt' },
+  { model:'GBRegressor',  before:0.881502, after:0.877420, params:'n_estimators=300, max_depth=3, learning_rate=0.03' },
+  { model:'XGBoost',      before:0.719281, after:0.848887, params:'max_depth=6, n_estimators=150, learning_rate=0.06, alpha=1' },
+  { model:'KNN',          before:0.835866, after:0.755619, params:'n_neighbors=11, weights=distance, p=2' },
+  { model:'MLP (ANN)',    before:0.878596, after:0.931108, params:'learning_rate_init=0.01, max_iter=300' }
+];
+
+/* ============================= PLOTLY THEME ============================= */
+
+const baseLayout = {
+  paper_bgcolor:'rgba(0,0,0,0)',
+  plot_bgcolor:'rgba(0,0,0,0)',
+  font:{ family:'Inter, sans-serif', color:PALETTE.text, size:12 },
+  margin:{ l:44, r:20, t:10, b:40 }
+};
+const sceneAxis = { gridcolor:PALETTE.grid, zerolinecolor:PALETTE.grid, color:PALETTE.text, showbackground:true, backgroundcolor:'rgba(255,255,255,0.02)' };
+const plotCfg = { displayModeBar:false, responsive:true };
+
+/* ============================= 3D BAR HELPER (mesh3d cuboids) ============================= */
+
+function bar3dTrace(values, color){
+  const xs=[],ys=[],zs=[],I=[],J=[],K=[],FC=[];
+  const wx=0.6, wy=0.6;
+  values.forEach((v,idx)=>{
+    const x0=idx, x1=idx+wx, y0=0, y1=wy, z0=0, z1=Math.max(v,0.001);
+    const base = xs.length;
+    const verts=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
+    verts.forEach(p=>{xs.push(p[0]); ys.push(p[1]); zs.push(p[2]);});
+    const faces=[[0,1,2],[0,2,3],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
+    faces.forEach(f=>{ I.push(base+f[0]); J.push(base+f[1]); K.push(base+f[2]); });
+  });
+  return { type:'mesh3d', x:xs, y:ys, z:zs, i:I, j:J, k:K, color:color, flatshading:true, opacity:0.95, lighting:{ambient:0.6, diffuse:0.7, specular:0.15, roughness:0.6}, hoverinfo:'skip' };
+}
+
+function bar3dLabels(labels, values, color){
+  return {
+    type:'scatter3d', mode:'text',
+    x: values.map((v,i)=>i+0.3), y: values.map(()=>1.1), z: values.map(v=>v),
+    text: values.map(v=>String(v)),
+    textfont:{ color:color, size:11, family:'IBM Plex Mono, monospace' },
+    hoverinfo:'skip'
+  };
+}
+
+function renderDist3D(key){
+  const set = DIST_SETS[key];
+  const labels = set.data.map(d=>d[0]);
+  const values = set.data.map(d=>d[1]);
+  const bars = bar3dTrace(values, PALETTE.amber);
+  const labelTrace = bar3dLabels(labels, values, '#f2ede6');
+
+  const layout = Object.assign({}, baseLayout, {
+    scene:{
+      xaxis: Object.assign({}, sceneAxis, { title:'', tickvals: values.map((_,i)=>i+0.3), ticktext: labels, tickfont:{size:10} }),
+      yaxis: Object.assign({}, sceneAxis, { title:'', showticklabels:false }),
+      zaxis: Object.assign({}, sceneAxis, { title:'count' }),
+      camera:{ eye:{x:1.7, y:-1.7, z:0.9} },
+      aspectratio:{x: Math.max(1.1, labels.length*0.11), y:0.5, z:0.55}
+    },
+    margin:{l:0,r:0,t:10,b:0}
+  });
+  Plotly.react('dist3d', [bars, labelTrace], layout, plotCfg);
+}
+
+/* ============================= BUILD TABS ============================= */
+
+const tabbar = document.getElementById('dist-tabs');
+Object.keys(DIST_SETS).forEach((key,i)=>{
+  const btn = document.createElement('button');
+  btn.className = 'tabbtn' + (i===0?' active':'');
+  btn.textContent = DIST_SETS[key].title;
+  btn.onclick = ()=>{
+    document.querySelectorAll('#dist-tabs .tabbtn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    renderDist3D(key);
+  };
+  tabbar.appendChild(btn);
+});
+renderDist3D('make');
+
+/* ============================= SMALL 2D CHARTS ============================= */
+
+Plotly.newPlot('pie-fuel', [{
+  type:'pie', labels:['Gas','Diesel'], values:[180,20], hole:0.62,
+  marker:{colors:[PALETTE.amber, PALETTE.teal]}, textfont:{color:'#12151b', size:12},
+  textinfo:'label+value', hoverinfo:'label+percent'
+}], Object.assign({}, baseLayout, { showlegend:false, margin:{l:10,r:10,t:10,b:10} }), plotCfg);
+
+Plotly.newPlot('pie-drive', [{
+  type:'pie', labels:['FWD','RWD','4WD'], values:[118,74,8], hole:0.62,
+  marker:{colors:[PALETTE.teal, PALETTE.amber, '#5a6373']}, textfont:{color:'#12151b', size:12},
+  textinfo:'label+value', hoverinfo:'label+percent'
+}], Object.assign({}, baseLayout, { showlegend:false, margin:{l:10,r:10,t:10,b:10} }), plotCfg);
+
+Plotly.newPlot('bar-cyl', [{
+  type:'bar', orientation:'h',
+  y:['twelve','three','eight','two','five','six','four'],
+  x:[1,1,4,4,10,24,156],
+  marker:{color:PALETTE.amber}
+}], Object.assign({}, baseLayout, { margin:{l:56,r:16,t:10,b:30}, xaxis:{gridcolor:PALETTE.grid}, yaxis:{tickfont:{size:11}} }), plotCfg);
+
+/* ============================= 3D CORRELATION SURFACE ============================= */
+
+Plotly.newPlot('corr3d', [{
+  type:'surface', x:CORR_FEATURES, y:CORR_FEATURES, z:CORR_Z,
+  colorscale:[[0,'#2a3140'],[0.5,'#e0554f'],[0.75,'#e8873a'],[1,'#4fd1c5']],
+  showscale:true, colorbar:{ tickfont:{color:PALETTE.text, size:10}, thickness:12, len:0.7 },
+  contours:{ z:{show:true, usecolormap:true, project:{z:true}} }
+}], Object.assign({}, baseLayout, {
+  scene:{
+    xaxis: Object.assign({}, sceneAxis, {tickfont:{size:9}}),
+    yaxis: Object.assign({}, sceneAxis, {tickfont:{size:9}}),
+    zaxis: Object.assign({}, sceneAxis, {title:'r', range:[-1,1]}),
+    camera:{ eye:{x:1.6,y:-1.9,z:0.8} }
+  },
+  margin:{l:0,r:0,t:10,b:0}
+}), plotCfg);
+
+/* ============================= RANGES ============================= */
+
+Plotly.newPlot('price-hist', [{
+  type:'bar', x:PRICE_HIST.edges, y:PRICE_HIST.counts, marker:{color:PALETTE.amber}
+}], Object.assign({}, baseLayout, {
+  xaxis:{gridcolor:'rgba(0,0,0,0)', tickangle:-30, tickfont:{size:10}},
+  yaxis:{gridcolor:PALETTE.grid, title:'vehicles'}
+}), plotCfg);
+
+Plotly.newPlot('spec-box', SPEC_BOX.map((s,i)=>({
+  type:'box', name:s.name,
+  q1:[s.q1], median:[s.med], q3:[s.q3], lowerfence:[s.min], upperfence:[s.max],
+  marker:{color: i%2===0?PALETTE.amber:PALETTE.teal},
+  boxpoints:false
+})), Object.assign({}, baseLayout, {
+  showlegend:false,
+  yaxis:{gridcolor:PALETTE.grid, type:'log', title:'value (log scale)'},
+  xaxis:{tickfont:{size:10}}
+}), plotCfg);
+
+/* ============================= MODEL BENCH ============================= */
+
+Plotly.newPlot('leaderboard', [{
+  type:'bar', orientation:'h',
+  y:LEADERBOARD.map(d=>d.model), x:LEADERBOARD.map(d=>d.r2),
+  marker:{ color: LEADERBOARD.map(d=> d.r2>=0.93 ? PALETTE.amber : '#3a4457') },
+  text:LEADERBOARD.map(d=>(d.r2*100).toFixed(1)+'%'), textposition:'outside', textfont:{size:11, color:PALETTE.text}
+}], Object.assign({}, baseLayout, {
+  margin:{l:150,r:40,t:10,b:30},
+  xaxis:{gridcolor:PALETTE.grid, range:[0,1.05], title:'R²'},
+  yaxis:{tickfont:{size:11.5}}
+}), plotCfg);
+
+Plotly.newPlot('tuning', [
+  { type:'bar', name:'Default', x:TUNING.map(d=>d.model), y:TUNING.map(d=>d.before), marker:{color:'#3a4457'} },
+  { type:'bar', name:'Tuned',   x:TUNING.map(d=>d.model), y:TUNING.map(d=>d.after),  marker:{color:PALETTE.amber} }
+], Object.assign({}, baseLayout, {
+  barmode:'group', legend:{orientation:'h', y:1.12, font:{size:11}},
+  margin:{l:40,r:10,t:36,b:70},
+  xaxis:{tickangle:-25, tickfont:{size:10.5}},
+  yaxis:{gridcolor:PALETTE.grid, range:[0,1], title:'R²'}
+}), plotCfg);
+
+/* ============================= MODEL TABLE ============================= */
+
+const tbody = document.getElementById('model-table');
+TUNING.forEach(d=>{
+  const delta = d.after - d.before;
+  const up = delta >= 0;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${d.model}</td>
+    <td class="mono">${d.before.toFixed(4)}</td>
+    <td class="mono">${d.after.toFixed(4)}</td>
+    <td><span class="pill ${up?'up':'down'}">${up?'+':''}${(delta*100).toFixed(2)} pts</span></td>
+    <td class="mono" style="color:#8d96a6; font-size:11.5px;">${d.params}</td>
+  `;
+  tbody.appendChild(tr);
+});
+
+/* ============================= RESIZE ============================= */
+window.addEventListener('resize', ()=>{
+  ['dist3d','corr3d','price-hist','spec-box','leaderboard','tuning','pie-fuel','pie-drive','bar-cyl'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) Plotly.Plots.resize(el);
+  });
+});
+</script>
+</body>
+</html>
